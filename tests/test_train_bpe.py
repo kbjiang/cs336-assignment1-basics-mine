@@ -19,6 +19,7 @@ def test_train_bpe_speed():
         input_path=input_path,
         vocab_size=500,
         special_tokens=["<|endoftext|>"],
+        num_processes=8,
     )
     end_time = time.time()
     assert end_time - start_time < 1.5
@@ -30,6 +31,7 @@ def test_train_bpe():
         input_path=input_path,
         vocab_size=500,
         special_tokens=["<|endoftext|>"],
+        num_processes=20,
     )
 
     # Path to the reference tokenizer vocab and merges
@@ -72,6 +74,7 @@ def test_train_bpe_special_tokens(snapshot):
         input_path=input_path,
         vocab_size=1000,
         special_tokens=["<|endoftext|>"],
+        num_processes=20,
     )
 
     # Check that the special token is not in the vocab

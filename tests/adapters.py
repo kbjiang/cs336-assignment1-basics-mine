@@ -588,4 +588,11 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    import sys
+    sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
+    from pretokenization import train_bpe
+    vocab, merges = train_bpe(
+        input_path, vocab_size, special_tokens, **kwargs
+    )
+    return vocab, merges
