@@ -558,7 +558,11 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    # raise NotImplementedError
+    import sys
+    sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
+    from tokenizer import Tokenizer
+    return Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -591,7 +595,8 @@ def run_train_bpe(
     # raise NotImplementedError
     import sys
     sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
-    from pretokenization import train_bpe
+    from train_bpe import train_bpe
+    # from zitong import train_bpe
     vocab, merges = train_bpe(
         input_path, vocab_size, special_tokens, **kwargs
     )

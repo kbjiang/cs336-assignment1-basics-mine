@@ -1,54 +1,70 @@
 import os
 import multiprocessing as mp
 from typing import BinaryIO
+import json
+import time
+import logging
+from contextlib import contextmanager
+import cProfile
+import pstats
+from io import StringIO
 
-def find_chunk_boundaries(
-    file: BinaryIO, 
-    desired_num_chunks: int, 
-    split_special_token: bytes
-) -> list[int]:
-    """
-    Chunk the file into parts that can be counted independently.
-    May return fewer chunks if the boundaries end up overlapping.
-    """
-    assert isinstance(split_special_token, bytes), (
-        "Must represent special token as a bytestring"
-    )
+from pretokenization_example import find_chunk_boundaries
+import tracemalloc
+from tqdm import tqdm
 
-    # Get total file size in bytes
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
+# Set up logging for profiling information
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bpe_cprofile.log'),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
+logger = logging.getLogger(__name__)
 
-    chunk_size = file_size // desired_num_chunks
+# Global file for all profiling results
+PROFILE_OUTPUT_FILE = "bpe_complete_profile.txt"
 
-    # Initial guesses for chunk boundary locations, uniformly spaced
-    # Chunks start on previous index, don't include last index
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-    chunk_boundaries[-1] = file_size
-
-    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
-
-    for bi in range(1, len(chunk_boundaries) - 1):
-        initial_position = chunk_boundaries[bi]
-        file.seek(initial_position)  # Start at boundary guess
-        while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
-
-            # If EOF, this boundary should be at the end of the file
-            if mini_chunk == b"":
-                chunk_boundaries[bi] = file_size
-                break
-
-            # Find the special token in the mini chunk
-            found_at = mini_chunk.find(split_special_token)
-            if found_at != -1:
-                chunk_boundaries[bi] = initial_position + found_at
-                break
-            initial_position += mini_chunk_size
-
-    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    return sorted(set(chunk_boundaries))
+@contextmanager
+def CProfiler(name: str):
+    """Context manager for profiling code sections with cProfile - writes to single file"""
+    profiler = cProfile.Profile()
+    logger.info(f"Starting cProfile: {name}")
+    start_time = time.perf_counter()
+    
+    try:
+        profiler.enable()
+        yield
+    finally:
+        profiler.disable()
+        end_time = time.perf_counter()
+        elapsed = end_time - start_time
+        
+        # Create stats object
+        stats = pstats.Stats(profiler)
+        stats.sort_stats('cumulative')
+        
+        # Append results to single profile file
+        with open(PROFILE_OUTPUT_FILE, 'a') as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"=== cProfile Results for: {name} ===\n")
+            f.write(f"=== Total time: {elapsed:.4f} seconds ===\n")
+            f.write(f"{'='*80}\n\n")
+            
+            # Redirect stats output to file
+            old_stdout = stats.stream
+            stats.stream = f
+            stats.print_stats(30)  # Top 30 functions
+            f.write("\n\n=== Callers for top functions ===\n")
+            stats.print_callers(10)  # Top 10 functions with their callers
+            stats.stream = old_stdout
+            f.write(f"\n{'='*80}\n")
+            f.write(f"=== End of {name} ===\n")
+            f.write(f"{'='*80}\n\n")
+        
+        logger.info(f"Completed cProfile: {name} - Time: {elapsed:.4f} seconds - Results appended to: {PROFILE_OUTPUT_FILE}")
 
 def process_chunk(args):
     file_path, start, end = args  # Unpack the arguments properly
@@ -73,7 +89,8 @@ def get_initial_pretoken_counts(doc, pat):
     pretoken_counts = {}
     for ptok in pretokens:
         pretoken = ptok.group().encode("utf-8")
-        pretoken = tuple(list(bytes([idx]) for idx in list(pretoken)))
+        pretoken = tuple(bytes([b]) for b in pretoken)
+        # pretoken = tuple(list(bytes([idx]) for idx in list(pretoken)))
         pretoken_counts[pretoken] = pretoken_counts.get(pretoken, 0) + 1
     return pretoken_counts
 
@@ -87,8 +104,12 @@ def get_pair_counts(pretoken_counts):
     return pair_counts
 
 def get_max_pair(pair_counts):
-    max_counts = max(pair_counts.values())
-    max_pair = max([byte_tup for byte_tup, byte_tup_count in pair_counts.items() if byte_tup_count==max_counts])
+    max_count = 0
+    max_pair = None
+    for pair, count in pair_counts.items():
+        if count > max_count or (count == max_count and pair > max_pair):
+            max_count = count
+            max_pair = pair
     return max_pair
 
 def merge_one_tuple(byte_tup, max_pair):
@@ -96,11 +117,15 @@ def merge_one_tuple(byte_tup, max_pair):
     if len(byte_tup) < 2:
         return byte_tup
     
-    result = []
-    i = 0
     max_pair_0, max_pair_1 = max_pair  # Unpack once
     merged_token = max_pair_0 + max_pair_1  # Pre-compute joined bytes
+
+    merged_byte_tup = b"".join(byte_tup)
+    if merged_token not in merged_byte_tup:
+        return byte_tup
     
+    result = []
+    i = 0
     while i < len(byte_tup):
         if (i < len(byte_tup) - 1 and 
             byte_tup[i] == max_pair_0 and 
@@ -114,14 +139,7 @@ def merge_one_tuple(byte_tup, max_pair):
     
     return tuple(result)
 
-def merge_pretoken_counts(pretoken_counts, max_pair):
-    new_pretoken_counts = {}
-    for byte_tup, byte_tup_count in pretoken_counts.items():
-        new_byte_tup = merge_one_tuple(byte_tup, max_pair)
-        new_pretoken_counts[new_byte_tup] = byte_tup_count
-    return new_pretoken_counts
-
-def merge_pretoken_counts_optimized(pretoken_counts, pair_counts, max_pair, new_token):
+def merge_pretoken_counts(pretoken_counts, pair_counts, max_pair, new_token):
     """
     Optimized version that incrementally updates pair counts instead of 
     recalculating everything from scratch. Only pairs that overlap with 
@@ -164,8 +182,9 @@ def train_bpe(
     vocab = [sp_tok.encode("utf-8") for sp_tok in special_tokens] + [bytes([i]) for i in range(256)]
     merges = []
 
-    # pre-tokenization in parallel
+    # pre-tokenization in parallel - NO PROFILING HERE (multiprocessing doesn't work with cProfile)
     pretoken_counts = {}
+    logger.info("Starting file chunking and boundary detection")
     with open(input_path, "rb") as f:
         boundaries = find_chunk_boundaries(
             f, num_processes, special_tokens[0].encode("utf-8")
@@ -173,48 +192,98 @@ def train_bpe(
         # Create arguments for each worker process
         chunk_args = [(input_path, start, end) 
                     for start, end in zip(boundaries[:-1], boundaries[1:])]
-        # Process chunks in parallel
-        with mp.Pool(processes=num_processes) as pool:
-            pretoken_countss = pool.map(process_chunk, chunk_args)
+    
+    logger.info(f"Starting parallel pretokenization ({num_processes} processes) - NO cProfile")
+    # Process chunks in parallel - cProfile doesn't work here
+    with mp.Pool(processes=num_processes) as pool:
+        pretoken_countss = pool.map(process_chunk, chunk_args)
+    logger.info("Completed parallel pretokenization")
 
-    for pretoken_counts_ in pretoken_countss:
-        for k, v in pretoken_counts_.items():
-            pretoken_counts[k] = pretoken_counts.get(k, 0) + v
+    with CProfiler("Merging pretoken counts from all processes"):
+        for pretoken_counts_ in pretoken_countss:
+            for k, v in pretoken_counts_.items():
+                pretoken_counts[k] = pretoken_counts.get(k, 0) + v
 
     # Optimized BPE training with incremental updates
     num_merges = vocab_size - len(vocab)
     
-    # Build initial pair counts index
-    pair_counts = get_pair_counts(pretoken_counts)
+    with CProfiler("Initial pair counts calculation"):
+        # Build initial pair counts index
+        pair_counts = get_pair_counts(pretoken_counts)
     
-    for _ in range(num_merges):
-        if not pair_counts:
-            break
+    logger.info(f"Starting BPE training with {num_merges} merges")
+    
+    # Profile the BPE training loop
+    with CProfiler(f"BPE training loop ({num_merges} merges)"):
+        for _ in tqdm(range(num_merges), total=num_merges):
+            if not pair_counts:
+                break
+                
+            # Find the most frequent pair
+            max_pair = get_max_pair(pair_counts)
             
-        # Find the most frequent pair
-        max_pair = get_max_pair(pair_counts)
-        
-        # Create new merged token and add to vocab
-        new_token = b"".join(max_pair)
-        vocab.append(new_token)
-        merges.append(max_pair)
-        
-        # Update pretoken_counts and pair_counts incrementally
-        pretoken_counts, pair_counts = merge_pretoken_counts_optimized(
-            pretoken_counts, pair_counts, max_pair, new_token
-        )
+            # Create new merged token and add to vocab
+            new_token = b"".join(max_pair)
+            vocab.append(new_token)
+            merges.append(max_pair)
+            
+            # Update pretoken_counts and pair_counts incrementally
+            pretoken_counts, pair_counts = merge_pretoken_counts(
+                pretoken_counts, pair_counts, max_pair, new_token
+            )
 
-    vocab = {i: v for i, v in enumerate(vocab)}
+    with CProfiler("Converting vocab to final format"):
+        vocab = {i: v for i, v in enumerate(vocab)}
     return vocab, merges
 
 if __name__ == "__main__":
-    # input_path = "/home/azureuser/02-fun/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt"
-    input_path = "/home/azureuser/02-fun/assignment1-basics/tests/fixtures/corpus.en"
-    vocab_size = 500
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
+    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt"
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/tests/fixtures/corpus.en"
+    # vocab_size = 32_000
+    vocab_size = 10_000
+    # vocab_size = 500
     special_tokens = ["<|endoftext|>"]
     num_processes = 40
+    
+    logger.info("Starting BPE training script with cProfile")
+    logger.info(f"Input file: {input_path}")
+    logger.info(f"Target vocab size: {vocab_size}")
+    logger.info(f"Number of processes: {num_processes}")
+    
+    # Initialize the profile output file
+    with open(PROFILE_OUTPUT_FILE, 'w') as f:
+        f.write(f"BPE Training Complete Profile Results\n")
+        f.write(f"=====================================\n")
+        f.write(f"Input file: {input_path}\n")
+        f.write(f"Target vocab size: {vocab_size}\n")
+        f.write(f"Number of processes: {num_processes}\n")
+        f.write(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"=====================================\n\n")
+    
+    logger.info("Starting memory tracking setup")
+    tracemalloc.start()
+    print("Tracemalloc started.")
+    
+    # Run BPE training without nested profilers
     vocab, merges = train_bpe(
         input_path, vocab_size, special_tokens, num_processes
     )
-    # print(merges)
-    # print(vocab)
+    
+    logger.info("Starting memory usage reporting")
+    current, peak = tracemalloc.get_traced_memory()
+    peak_mb = peak / (1024 * 1024)
+    print(f"Peak memory usage: {peak_mb:.2f} MB")
+    logger.info(f"Peak memory usage: {peak_mb:.2f} MB")
+    tracemalloc.stop()
+
+    with open("train_bpe_owt_vocab.json", "w") as f:
+        json.dump({k: v.decode("utf-8", errors="replace") for k,v in vocab.items()}, f, indent=4)
+
+    with open("train_bpe_owt_merges.text", "w") as f:
+        for a, b in merges:
+            f.write(f"{a.decode('utf-8', errors='replace')} {b.decode('utf-8', errors='replace')}\n")
+    
+    logger.info("BPE training script with cProfile completed successfully")
+    logger.info(f"Complete profile results saved to: {PROFILE_OUTPUT_FILE}")

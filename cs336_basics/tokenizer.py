@@ -21,6 +21,13 @@ def update_pretoken(pretoken: Iterable[bytes], pair: tuple[bytes, bytes]):
     
     return result
 
+def split_by_special_tokens(special_tokens, text):
+    if not special_tokens:
+        return [text]
+    escaped_patterns = [re.escape(p) for p in sorted(special_tokens, key=len, reverse=True)]
+    pattern = f"({'|'.join(escaped_patterns)})"
+    return re.split(pattern, text)
+
 class Tokenizer:
     def __init__(
         self,
@@ -69,18 +76,24 @@ class Tokenizer:
     def encode(self, text: str) -> list[int]:
         vocab_reversed = {v:k for k,v in self.vocab.items()}
         pretokens = re.findall(PAT, text)
+        chunks = split_by_special_tokens(self.special_tokens, text)
         tokens = []
-        for pretoken in pretokens:
-            pretoken  = [bytes([b]) for b in pretoken.encode()]
-            while len(pretoken) >= 2:
-                pairs = list(zip(pretoken[:-1], pretoken[1:]))
-                try:
-                    pid = min([self.merges.index(p) for p in pairs if p in self.merges])
-                    pair = self.merges[pid]
-                    pretoken = update_pretoken(pretoken, pair)
-                except ValueError:
-                    break
-            tokens.extend(pretoken)
+        for chunk in chunks:
+            if self.special_tokens and chunk in self.special_tokens:
+                tokens.append(chunk.encode())
+                continue
+            pretokens = re.findall(PAT, chunk)
+            for pretoken in pretokens:
+                pretoken  = [bytes([b]) for b in pretoken.encode()]
+                while len(pretoken) >= 2:
+                    pairs = list(zip(pretoken[:-1], pretoken[1:]))
+                    try:
+                        pid = min([self.merges.index(p) for p in pairs if p in self.merges])
+                        pair = self.merges[pid]
+                        pretoken = update_pretoken(pretoken, pair)
+                    except ValueError:
+                        break
+                tokens.extend(pretoken)
         return [vocab_reversed[token] for token in tokens]
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
@@ -88,4 +101,4 @@ class Tokenizer:
             yield from self.encode(text)
 
     def decode(self, ids: list[int]):
-        return b"".join([self.vocab[i] for i in ids]).decode("utf-8")
+        return b"".join([self.vocab[i] for i in ids]).decode("utf-8", errors="replace")
