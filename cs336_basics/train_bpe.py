@@ -8,6 +8,9 @@ from contextlib import contextmanager
 import cProfile
 import pstats
 from io import StringIO
+import argparse
+
+from utils import save_voacb_and_merge
 
 from pretokenization_example import find_chunk_boundaries
 import tracemalloc
@@ -237,20 +240,39 @@ def train_bpe(
     return vocab, merges
 
 if __name__ == "__main__":
-    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
-    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
-    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt"
-    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/tests/fixtures/corpus.en"
-    # vocab_size = 32_000
-    vocab_size = 10_000
-    # vocab_size = 500
-    special_tokens = ["<|endoftext|>"]
-    num_processes = 40
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Train BPE tokenizer')
+    parser.add_argument('--input_path', type=str, required=True,
+                        help='Path to the input text file')
+    parser.add_argument('--vocab_size', type=int, default=10000,
+                        help='Target vocabulary size (default: 10000)')
+    parser.add_argument('--special_tokens', nargs='+', default=["<|endoftext|>"],
+                        help='List of special tokens (default: ["<|endoftext|>"])')
+    parser.add_argument('--num_processes', type=int, default=40,
+                        help='Number of processes for parallel processing (default: 40)')
+    parser.add_argument('--vocab_path', type=str, default="train_bpe_vocab.json",
+                        help='Output path for vocabulary file (default: train_bpe_vocab.json)')
+    parser.add_argument('--merges_path', type=str, default="train_bpe_merges.txt",
+                        help='Output path for merges file (default: train_bpe_merges.txt)')
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    # Use parsed arguments
+    input_path = args.input_path
+    vocab_size = args.vocab_size
+    special_tokens = args.special_tokens
+    num_processes = args.num_processes
+    vocab_path = args.vocab_path
+    merges_path = args.merges_path
     
     logger.info("Starting BPE training script with cProfile")
     logger.info(f"Input file: {input_path}")
     logger.info(f"Target vocab size: {vocab_size}")
+    logger.info(f"Special tokens: {special_tokens}")
     logger.info(f"Number of processes: {num_processes}")
+    logger.info(f"Vocab output path: {vocab_path}")
+    logger.info(f"Merges output path: {merges_path}")
     
     # Initialize the profile output file
     with open(PROFILE_OUTPUT_FILE, 'w') as f:
@@ -278,12 +300,9 @@ if __name__ == "__main__":
     logger.info(f"Peak memory usage: {peak_mb:.2f} MB")
     tracemalloc.stop()
 
-    with open("train_bpe_owt_vocab.json", "w") as f:
-        json.dump({k: v.decode("utf-8", errors="replace") for k,v in vocab.items()}, f, indent=4)
-
-    with open("train_bpe_owt_merges.text", "w") as f:
-        for a, b in merges:
-            f.write(f"{a.decode('utf-8', errors='replace')} {b.decode('utf-8', errors='replace')}\n")
+    save_voacb_and_merge(vocab, merges, vocab_path, merges_path)
     
     logger.info("BPE training script with cProfile completed successfully")
     logger.info(f"Complete profile results saved to: {PROFILE_OUTPUT_FILE}")
+    logger.info(f"Vocabulary saved to: {vocab_path}")
+    logger.info(f"Merges saved to: {merges_path}")
