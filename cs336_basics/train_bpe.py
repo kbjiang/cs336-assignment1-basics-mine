@@ -10,9 +10,8 @@ import pstats
 from io import StringIO
 import argparse
 
-from utils import save_voacb_and_merge
+from utils import save_voacb_and_merge, find_chunk_boundaries
 
-from pretokenization_example import find_chunk_boundaries
 import tracemalloc
 from tqdm import tqdm
 
