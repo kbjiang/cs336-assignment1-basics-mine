@@ -595,8 +595,8 @@ def run_train_bpe(
     # raise NotImplementedError
     import sys
     sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
-    from train_bpe import train_bpe
-    # from zitong import train_bpe
+    from train_bpe_test import train_bpe
+    # from yitong import train_bpe
     vocab, merges = train_bpe(
         input_path, vocab_size, special_tokens, **kwargs
     )
