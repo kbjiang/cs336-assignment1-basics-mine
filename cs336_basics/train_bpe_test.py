@@ -10,7 +10,7 @@ import pstats
 from io import StringIO
 import argparse
 
-from utils import save_voacb_and_merge, find_chunk_boundaries
+from utils import save_vocab_and_merge, find_chunk_boundaries
 
 import tracemalloc
 from tqdm import tqdm
@@ -107,7 +107,7 @@ def get_pair_counts(pretoken_counts):
 
 def get_max_pair(pair_counts):
     max_count = 0
-    max_pair = (b"\x00", b"\x00")
+    max_pair = None
     for pair, count in pair_counts.items():
         if count > max_count or (count == max_count and pair > max_pair):
             max_count = count
@@ -313,26 +313,26 @@ def train_bpe(
     logger.info(f"Starting BPE training with {num_merges} merges")
     
     # Profile the BPE training loop
-    with CProfiler(f"BPE training loop ({num_merges} merges)"):
-        for _ in tqdm(range(num_merges), total=num_merges):
-            if not pair_counts:
-                break
-                    
-            # Find the most frequent pair
-            max_pair = get_max_pair(pair_counts)
-            
-            # Create new merged token and add to vocab
-            new_token = b"".join(max_pair)
-            vocab.append(new_token)
-            merges.append(max_pair)
-            
-            # Update pretoken_counts and pair_counts incrementally
-            pretoken_counts, pair_counts = merge_pretoken_counts(
-                pretoken_counts, pair_counts, max_pair
-            )
+    # with CProfiler(f"BPE training loop ({num_merges} merges)"):
+    for _ in tqdm(range(num_merges), total=num_merges):
+        if not pair_counts:
+            break
+                
+        # Find the most frequent pair
+        max_pair = get_max_pair(pair_counts)
+        
+        # Create new merged token and add to vocab
+        new_token = b"".join(max_pair)
+        vocab.append(new_token)
+        merges.append(max_pair)
+        
+        # Update pretoken_counts and pair_counts incrementally
+        pretoken_counts, pair_counts = merge_pretoken_counts(
+            pretoken_counts, pair_counts, max_pair
+        )
 
-        vocab = {i: v for i, v in enumerate(vocab)}
-        return vocab, merges
+    vocab = {i: v for i, v in enumerate(vocab)}
+    return vocab, merges
 
 if __name__ == "__main__":
     # Set up argument parser
@@ -379,8 +379,8 @@ if __name__ == "__main__":
         f.write(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"=====================================\n\n")
     
-    logger.info("Starting memory tracking setup")
-    tracemalloc.start()
+    # logger.info("Starting memory tracking setup")
+    # tracemalloc.start()
     print("Tracemalloc started.")
     
     # Run BPE training without nested profilers
@@ -393,9 +393,9 @@ if __name__ == "__main__":
     peak_mb = peak / (1024 * 1024)
     print(f"Peak memory usage: {peak_mb:.2f} MB")
     logger.info(f"Peak memory usage: {peak_mb:.2f} MB")
-    tracemalloc.stop()
+    # tracemalloc.stop()
 
-    save_voacb_and_merge(vocab, merges, vocab_path, merges_path)
+    save_vocab_and_merge(vocab, merges, vocab_path, merges_path)
     
     logger.info("BPE training script with cProfile completed successfully")
     logger.info(f"Complete profile results saved to: {PROFILE_OUTPUT_FILE}")
