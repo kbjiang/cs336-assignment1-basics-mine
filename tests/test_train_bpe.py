@@ -19,7 +19,7 @@ def test_train_bpe_speed():
         input_path=input_path,
         vocab_size=500,
         special_tokens=["<|endoftext|>"],
-        num_processes=8,
+        num_workers=8,
     )
     end_time = time.time()
     assert end_time - start_time < 1.5
@@ -31,7 +31,7 @@ def test_train_bpe():
         input_path=input_path,
         vocab_size=500,
         special_tokens=["<|endoftext|>"],
-        num_processes=20,
+        num_workers=8,
     )
 
     # Path to the reference tokenizer vocab and merges
@@ -74,7 +74,7 @@ def test_train_bpe_special_tokens(snapshot):
         input_path=input_path,
         vocab_size=1000,
         special_tokens=["<|endoftext|>"],
-        num_processes=20,
+        num_workers=8,
     )
 
     # Check that the special token is not in the vocab
@@ -89,3 +89,5 @@ def test_train_bpe_special_tokens(snapshot):
             "merges": merges,
         },
     )
+
+# python train_bpe.py --input_path /home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt --vocab_size 32000 --num_workers 16 --vocab_path train_bpe_vocab_owt.json --merges_path train_bpe_merges_owt.txt

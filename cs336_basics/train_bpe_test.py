@@ -114,29 +114,35 @@ def get_max_pair(pair_counts):
             max_pair = pair
     return max_pair
 
-def merge_one_tuple(byte_tup, max_pair):
+def merge_one_tuple(byte_tup, max_pair, max_pair_token):
     """Optimized version using list operations instead of tuple concatenation"""
-    # if len(byte_tup) == 2:
-    #     if byte_tup == max_pair:
-    #         return (b"".join(max_pair),), [0], None, None
-    #     else:
-    #         return byte_tup, None, None, None
-    # if len(byte_tup) == 3:
-    #     if byte_tup[:2] == max_pair:
-    #         return (b"".join(max_pair), byte_tup[2]), [0, 1], none, [0]
-    #     if byte_tup[-2:] == max_pair:
-    #         return (byte_tup[0], b"".join(max_pair)), [0, 1], [0], none
+    if len(byte_tup) == 1:
+        return byte_tup, None, None, None
     
-    max_pair_token = b"".join(max_pair)
-
-    # if len(byte_tup) == 1:
+    # Fast check: does this tuple even contain the target pair?
+    # This avoids expensive operations for most tuples
+    # found_pair = False
+    # for i in range(len(byte_tup) - 1):
+    #     if byte_tup[i] == max_pair[0] and byte_tup[i + 1] == max_pair[1]:
+    #         found_pair = True
+    #         break
+    # if not found_pair:
     #     return byte_tup, None, None, None
 
     merged_byte_tup = b"".join(byte_tup)
     if max_pair_token not in merged_byte_tup:
         return byte_tup, None, None, None
-    
 
+    if len(byte_tup) == 2:
+        if byte_tup == max_pair:
+            return (b"".join(max_pair),), [0], None, None
+        else:
+            return byte_tup, None, None, None
+    # if len(byte_tup) == 3:
+    #     if byte_tup[:2] == max_pair:
+    #         return (b"".join(max_pair), byte_tup[2]), [0, 1], none, [0]
+    #     if byte_tup[-2:] == max_pair:
+    #         return (byte_tup[0], b"".join(max_pair)), [0, 1], [0], none
     result = []
     ids = []
     i = 0
@@ -161,49 +167,105 @@ def merge_one_tuple(byte_tup, max_pair):
         
     return tuple(result), sorted(ids2rm), ids_prev, ids_post
 
+from collections import defaultdict
+
 def merge_pretoken_counts(pretoken_counts, pair_counts, max_pair):
-    """
-    Optimized version that incrementally updates pair counts instead of 
-    recalculating everything from scratch. Only pairs that overlap with 
-    the merged pair need to have their counts updated.
-    """
-    new_pretoken_counts = {}
-    new_pair_counts = dict(pair_counts)  # Faster than .copy()
-    
-    # # Remove the merged pair from pair counts
-    # new_pair_counts.pop(max_pair, None)
+    """Optimized with early filtering and defaultdict usage"""
+    new_pretoken_counts = defaultdict(int)  # Eliminates .get() calls
+    new_pair_counts = dict(pair_counts)
     
     max_pair_token = b"".join(max_pair)
-    for byte_tup, byte_tup_count in pretoken_counts.items():
-        new_byte_tup, ids2rm, ids_prev, ids_post = merge_one_tuple(byte_tup, max_pair)
-        new_pretoken_counts[new_byte_tup] = new_pretoken_counts.get(new_byte_tup, 0) + byte_tup_count
+    
+    # Filter: only process pretokens that could contain the target pair
+    # This is the key optimization - avoid 90%+ of merge_one_tuple calls
+    relevant_pretokens = []
+    for byte_tup, count in pretoken_counts.items():
+        if len(byte_tup) >= 2:
+            # Quick scan for the pair
+            for i in range(len(byte_tup) - 1):
+                if byte_tup[i] == max_pair[0] and byte_tup[i + 1] == max_pair[1]:
+                    relevant_pretokens.append((byte_tup, count))
+                    break
+            else:
+                # No pair found, copy unchanged
+                new_pretoken_counts[byte_tup] += count
+        else:
+            # Single byte, copy unchanged
+            new_pretoken_counts[byte_tup] += count
+    
+    # Only process pretokens that actually contain the target pair
+    for byte_tup, byte_tup_count in relevant_pretokens:
+        new_byte_tup, ids2rm, ids_prev, ids_post = merge_one_tuple(byte_tup, max_pair, max_pair_token)
+        new_pretoken_counts[new_byte_tup] += byte_tup_count
         
-        # Only update pair counts for sequences that actually changed
+        # Update pair counts only for changed sequences
         if ids2rm:
-            # print(byte_tup)
-            # print(ids2rm)
             for i in ids2rm:
-                pair = (byte_tup[i], byte_tup[i+1])
-                count = new_pair_counts.get(pair, 0) - byte_tup_count
-                if count > 0:
-                    new_pair_counts[pair] = count
-                else:
-                    new_pair_counts.pop(pair, None)
-            
+                if i < len(byte_tup) - 1:  # Bounds check
+                    pair = (byte_tup[i], byte_tup[i+1])
+                    new_count = new_pair_counts.get(pair, 0) - byte_tup_count
+                    if new_count > 0:
+                        new_pair_counts[pair] = new_count
+                    else:
+                        new_pair_counts.pop(pair, None)
+        
+        # Add new pairs
         if ids_prev:
-            # Add new pair counts for the merged sequence
             for i in ids_prev:
                 new_pair = (byte_tup[i], max_pair_token)
                 new_pair_counts[new_pair] = new_pair_counts.get(new_pair, 0) + byte_tup_count
+        
         if ids_post:
-            # Add new pair counts for the merged sequence
             for i in ids_post:
-                new_pair = (max_pair_token, byte_tup[i+1])
-                new_pair_counts[new_pair] = new_pair_counts.get(new_pair, 0) + byte_tup_count
+                if i + 1 < len(byte_tup):  # Bounds check
+                    new_pair = (max_pair_token, byte_tup[i + 1])
+                    new_pair_counts[new_pair] = new_pair_counts.get(new_pair, 0) + byte_tup_count
     
-    # new_pair_counts = {k:v for k, v in new_pair_counts.items() if v > 0}
-    # return new_pretoken_counts, new_pair_counts, get_max_pair(new_pair_counts)
-    return new_pretoken_counts, new_pair_counts
+    return dict(new_pretoken_counts), new_pair_counts
+
+# def merge_pretoken_counts(pretoken_counts, pair_counts, max_pair):
+#     """
+#     Optimized version that incrementally updates pair counts instead of 
+#     recalculating everything from scratch. Only pairs that overlap with 
+#     the merged pair need to have their counts updated.
+#     """
+#     new_pretoken_counts = {}
+#     new_pair_counts = dict(pair_counts)  # Faster than .copy()
+    
+#     # # Remove the merged pair from pair counts
+#     # new_pair_counts.pop(max_pair, None)
+    
+#     max_pair_token = b"".join(max_pair)
+#     for byte_tup, byte_tup_count in pretoken_counts.items():
+#         new_byte_tup, ids2rm, ids_prev, ids_post = merge_one_tuple(byte_tup, max_pair)
+#         new_pretoken_counts[new_byte_tup] = new_pretoken_counts.get(new_byte_tup, 0) + byte_tup_count
+        
+#         # Only update pair counts for sequences that actually changed
+#         if ids2rm:
+#             # print(byte_tup)
+#             # print(ids2rm)
+#             for i in ids2rm:
+#                 pair = (byte_tup[i], byte_tup[i+1])
+#                 count = new_pair_counts.get(pair, 0) - byte_tup_count
+#                 if count > 0:
+#                     new_pair_counts[pair] = count
+#                 else:
+#                     new_pair_counts.pop(pair, None)
+            
+#         if ids_prev:
+#             # Add new pair counts for the merged sequence
+#             for i in ids_prev:
+#                 new_pair = (byte_tup[i], max_pair_token)
+#                 new_pair_counts[new_pair] = new_pair_counts.get(new_pair, 0) + byte_tup_count
+#         if ids_post:
+#             # Add new pair counts for the merged sequence
+#             for i in ids_post:
+#                 new_pair = (max_pair_token, byte_tup[i+1])
+#                 new_pair_counts[new_pair] = new_pair_counts.get(new_pair, 0) + byte_tup_count
+    
+#     # new_pair_counts = {k:v for k, v in new_pair_counts.items() if v > 0}
+#     # return new_pretoken_counts, new_pair_counts, get_max_pair(new_pair_counts)
+#     return new_pretoken_counts, new_pair_counts
 
 
 def train_bpe(
@@ -237,6 +299,10 @@ def train_bpe(
         for k, v in pretoken_counts_.items():
             pretoken_counts[k] = pretoken_counts.get(k, 0) + v
 
+    # import pickle
+    # with open("pretokn-counts-ts-train.pkl", "wb") as f:
+    #     pickle.dump(pretoken_counts, f)
+
     # Optimized BPE training with incremental updates
     num_merges = vocab_size - len(vocab)
     
@@ -247,27 +313,26 @@ def train_bpe(
     logger.info(f"Starting BPE training with {num_merges} merges")
     
     # Profile the BPE training loop
-    # with CProfiler(f"BPE training loop ({num_merges} merges)"):
-    for _ in tqdm(range(num_merges), total=num_merges):
-        if not pair_counts:
-            break
-                
-        # Find the most frequent pair
-        max_pair = get_max_pair(pair_counts)
-        
-        # Create new merged token and add to vocab
-        new_token = b"".join(max_pair)
-        vocab.append(new_token)
-        merges.append(max_pair)
-        
-        # Update pretoken_counts and pair_counts incrementally
-        pretoken_counts, pair_counts = merge_pretoken_counts(
-            pretoken_counts, pair_counts, max_pair
-        )
+    with CProfiler(f"BPE training loop ({num_merges} merges)"):
+        for _ in tqdm(range(num_merges), total=num_merges):
+            if not pair_counts:
+                break
+                    
+            # Find the most frequent pair
+            max_pair = get_max_pair(pair_counts)
+            
+            # Create new merged token and add to vocab
+            new_token = b"".join(max_pair)
+            vocab.append(new_token)
+            merges.append(max_pair)
+            
+            # Update pretoken_counts and pair_counts incrementally
+            pretoken_counts, pair_counts = merge_pretoken_counts(
+                pretoken_counts, pair_counts, max_pair
+            )
 
-    # with CProfiler("Converting vocab to final format"):
-    vocab = {i: v for i, v in enumerate(vocab)}
-    return vocab, merges
+        vocab = {i: v for i, v in enumerate(vocab)}
+        return vocab, merges
 
 if __name__ == "__main__":
     # Set up argument parser
@@ -317,7 +382,6 @@ if __name__ == "__main__":
     logger.info("Starting memory tracking setup")
     tracemalloc.start()
     print("Tracemalloc started.")
-    
     
     # Run BPE training without nested profilers
     vocab, merges = train_bpe(

@@ -49,7 +49,7 @@ def gpt2_bytes_to_unicode() -> dict[int, str]:
     d = dict(zip(bs, characters))
     return d
 
-def save_voacb_and_merge(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]],
+def save_vocab_and_merge(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]],
                             vocab_path: str, merges_path: str):
     byte_to_unicode = gpt2_bytes_to_unicode()
 

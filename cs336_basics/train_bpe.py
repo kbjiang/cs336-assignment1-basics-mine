@@ -10,7 +10,7 @@ import pstats
 from io import StringIO
 import argparse
 
-from utils import save_voacb_and_merge, find_chunk_boundaries
+from utils import save_vocab_and_merge, find_chunk_boundaries
 
 import tracemalloc
 from tqdm import tqdm
@@ -99,11 +99,11 @@ def get_initial_pretoken_counts(doc, pat):
 
 def get_pair_counts(pretoken_counts):
     """Optimized version using dict.get() with default"""
-    pair_counts = {}
+    pair_counts = defaultdict(int)
     for byte_tup, byte_tup_count in pretoken_counts.items():
         for i in range(len(byte_tup) - 1):
             pair = (byte_tup[i], byte_tup[i+1])
-            pair_counts[pair] = pair_counts.get(pair, 0) + byte_tup_count
+            pair_counts[pair] += byte_tup_count
     return pair_counts
 
 def get_max_pair(pair_counts):
