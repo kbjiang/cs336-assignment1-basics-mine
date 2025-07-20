@@ -301,8 +301,8 @@ if __name__ == "__main__":
         f.write(f"=====================================\n\n")
     
     logger.info("Starting memory tracking setup")
-    tracemalloc.start()
-    print("Tracemalloc started.")
+    # tracemalloc.start()
+    # print("Tracemalloc started.")
     
     # Run BPE training without nested profilers
     vocab, merges = train_bpe(
@@ -314,9 +314,9 @@ if __name__ == "__main__":
     peak_mb = peak / (1024 * 1024)
     print(f"Peak memory usage: {peak_mb:.2f} MB")
     logger.info(f"Peak memory usage: {peak_mb:.2f} MB")
-    tracemalloc.stop()
+    # tracemalloc.stop()
 
-    save_voacb_and_merge(vocab, merges, vocab_path, merges_path)
+    save_vocab_and_merge(vocab, merges, vocab_path, merges_path)
     
     logger.info("BPE training script with cProfile completed successfully")
     logger.info(f"Complete profile results saved to: {PROFILE_OUTPUT_FILE}")
