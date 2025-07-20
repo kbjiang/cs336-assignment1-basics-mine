@@ -14,6 +14,7 @@ from utils import save_voacb_and_merge, find_chunk_boundaries
 
 import tracemalloc
 from tqdm import tqdm
+from collections import defaultdict
 
 # Set up logging for profiling information
 logging.basicConfig(
@@ -114,26 +115,23 @@ def get_max_pair(pair_counts):
             max_pair = pair
     return max_pair
 
-def merge_one_tuple(byte_tup, max_pair):
+def merge_one_tuple(byte_tup, max_pair, max_pair_merged):
     """Optimized version using list operations instead of tuple concatenation"""
     if len(byte_tup) < 2:
         return byte_tup
     
-    max_pair_0, max_pair_1 = max_pair  # Unpack once
-    merged_token = max_pair_0 + max_pair_1  # Pre-compute joined bytes
-
     merged_byte_tup = b"".join(byte_tup)
-    if merged_token not in merged_byte_tup:
+    if max_pair_merged not in merged_byte_tup:
         return byte_tup
     
     result = []
     i = 0
     while i < len(byte_tup):
         if (i < len(byte_tup) - 1 and 
-            byte_tup[i] == max_pair_0 and 
-            byte_tup[i + 1] == max_pair_1):
+            byte_tup[i] == max_pair[0] and 
+            byte_tup[i + 1] == max_pair[1]):
             # Merge the pair
-            result.append(merged_token)
+            result.append(max_pair_merged)
             i += 2
         else:
             result.append(byte_tup[i])
@@ -147,15 +145,34 @@ def merge_pretoken_counts(pretoken_counts, pair_counts, max_pair):
     recalculating everything from scratch. Only pairs that overlap with 
     the merged pair need to have their counts updated.
     """
-    new_pretoken_counts = {}
+    # new_pretoken_counts = {}
+    new_pretoken_counts = defaultdict(int)
     new_pair_counts = dict(pair_counts)  # Faster than .copy()
+    max_pair_merged = b"".join(max_pair)
     
     # Remove the merged pair from pair counts
     new_pair_counts.pop(max_pair, None)
     
-    for byte_tup, byte_tup_count in pretoken_counts.items():
-        new_byte_tup = merge_one_tuple(byte_tup, max_pair)
-        new_pretoken_counts[new_byte_tup] = byte_tup_count
+    # Filter: only process pretokens that could contain the target pair
+    # This is the key optimization - avoid 90%+ of merge_one_tuple calls
+    relevant_pretokens = []
+    for byte_tup, count in pretoken_counts.items():
+        if len(byte_tup) >= 2:
+            # Quick scan for the pair
+            for i in range(len(byte_tup) - 1):
+                if byte_tup[i] == max_pair[0] and byte_tup[i + 1] == max_pair[1]:
+                    relevant_pretokens.append((byte_tup, count))
+                    break
+            else:
+                # No pair found, copy unchanged
+                new_pretoken_counts[byte_tup] += count
+        else:
+            # Single byte, copy unchanged
+            new_pretoken_counts[byte_tup] += count
+
+    for byte_tup, byte_tup_count in relevant_pretokens:
+        new_byte_tup = merge_one_tuple(byte_tup, max_pair, max_pair_merged)
+        new_pretoken_counts[new_byte_tup] += byte_tup_count
         
         # Only update pair counts for sequences that actually changed
         if new_byte_tup != byte_tup:
