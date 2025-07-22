@@ -9,6 +9,8 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+import sys
+sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
 
 
 def run_linear(
@@ -29,8 +31,10 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    from linear import Linear
+    linear = Linear(d_in, d_out)
+    linear.load_state_dict({"W": weights})
+    return linear(in_features)
 
 
 def run_embedding(
@@ -593,10 +597,7 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     # raise NotImplementedError
-    import sys
-    sys.path.append("/home/azureuser/02-fun/cs336-assignment1-basics/cs336_basics")
-    from train_bpe_test import train_bpe
-    # from yitong import train_bpe
+    from train_bpe import train_bpe
     vocab, merges = train_bpe(
         input_path, vocab_size, special_tokens, **kwargs
     )
