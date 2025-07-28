@@ -167,11 +167,6 @@ class RoPE(nn.Module):
         )
         return result
 
-def softmax(x:torch.Tensor, dim:int):
-    x -= torch.amax(x, dim=dim, keepdim=True)
-    x_exp = torch.exp(x)
-    return x_exp/torch.sum(x_exp, axis=dim, keepdim=True)
-
 def scaled_dot_product_attention(
     Q: Float[torch.Tensor, " ... queries d_k"],
     K: Float[torch.Tensor, " ... keys d_k"],
