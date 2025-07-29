@@ -3,6 +3,21 @@ from typing import Optional
 import torch
 import math
 
+def learning_rate_schedule(
+    it: int,
+    max_learning_rate: float,
+    min_learning_rate: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int,
+):
+    if it < warmup_iters:
+        return it/warmup_iters * max_learning_rate
+    elif it <= cosine_cycle_iters:
+        multiplier = 0.5 * (1 + math.cos((it - warmup_iters)/(cosine_cycle_iters - warmup_iters) * math.pi))
+        return (1 - multiplier) * min_learning_rate + multiplier * max_learning_rate
+    else:
+        return min_learning_rate
+
 class AdamW(torch.optim.Optimizer):
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.001):
         if lr < 0:
@@ -42,3 +57,4 @@ class AdamW(torch.optim.Optimizer):
                 state["m"] = m
                 state["v"] = v
         return loss
+
