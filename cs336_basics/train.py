@@ -11,14 +11,6 @@ from optimizer import *
 from tokenizer import *
 from serialization import *
 
-def train_one_step(model, optimizer, batch):
-    optimizer.zero_grad()
-    x, y = batch
-    y_hat = model(x)
-    loss = cross_entropy_with_batch(y_hat, y)
-    loss.backward()
-    optimizer.step()
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a transformer language model")
     
@@ -68,7 +60,15 @@ if __name__ == "__main__":
     dataset = Dataset(args.data_path)
     for i in tqdm(range(args.num_steps), total=args.num_steps):
         batch = dataset.get_batch(args.batch_size, args.context_length, args.device)
-        train_one_step(model, optimizer, batch)
+        optimizer.zero_grad()
+        x, y = batch
+        y_hat = model(x)
+        loss = cross_entropy_with_batch(y_hat, y)
+        loss.backward()
+        optimizer.step()
+        if (i+1) % 10 == 0:
+            print(f"Loss at step {i}: {loss.data}")
+
     print("Training finished")
 
     save_checkpoint(model, optimizer, i, args.checkpoint_path)
