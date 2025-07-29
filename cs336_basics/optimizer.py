@@ -1,4 +1,3 @@
-from collections.abc import Callable, Iterable
 from typing import Optional
 import torch
 import math
@@ -25,8 +24,7 @@ class AdamW(torch.optim.Optimizer):
         defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
         super().__init__(params, defaults)
 
-    def step(self, closure: Optional[Callable] = None):
-        loss = None if closure is None else closure()
+    def step(self):
         for group in self.param_groups:
             lr = group['lr']
             beta1, beta2 = group['betas']
@@ -56,5 +54,4 @@ class AdamW(torch.optim.Optimizer):
                 state["t"] = t
                 state["m"] = m
                 state["v"] = v
-        return loss
 

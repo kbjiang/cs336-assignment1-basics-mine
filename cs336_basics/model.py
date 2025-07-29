@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from einops import rearrange, reduce, einsum
 from jaxtyping import Float
+from nn_utils import softmax
 
 class Linear(nn.Module):
     def __init__(
@@ -94,9 +95,12 @@ class SwiGLU(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
-        self.w1_weight = nn.Parameter(torch.randn(self.d_ff, self.d_model))
-        self.w2_weight = nn.Parameter(torch.randn(self.d_model, self.d_ff))
-        self.w3_weight = nn.Parameter(torch.randn(self.d_ff, self.d_model))
+        self.w1_weight = Linear(self.d_model, self.d_ff).W
+        self.w2_weight = Linear(self.d_ff, self.d_model).W
+        self.w3_weight = Linear(self.d_model, self.d_ff).W
+        # self.w1_weight = nn.Parameter(torch.randn(self.d_ff, self.d_model))
+        # self.w2_weight = nn.Parameter(torch.randn(self.d_model, self.d_ff))
+        # self.w3_weight = nn.Parameter(torch.randn(self.d_ff, self.d_model))
 
     @staticmethod
     def silu(x: torch.Tensor):
@@ -199,40 +203,47 @@ class multihead_self_attention(nn.Module):
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
         self.d_k = self.d_v =  self.d_model // self.num_heads
-        self.q_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.k_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.v_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.o_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.q_mha = rearrange(
+        self.q_proj_weight = Linear(self.d_model, self.d_model).W
+        self.k_proj_weight = Linear(self.d_model, self.d_model).W
+        self.v_proj_weight = Linear(self.d_model, self.d_model).W
+        self.o_proj_weight = Linear(self.d_model, self.d_model).W
+        # self.q_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.k_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.v_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.o_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # Register mask as a buffer so it moves with the model to different devices
+        self.register_buffer('mask', ~torch.triu(torch.ones(
+            self.max_seq_len, self.max_seq_len), diagonal = 1).bool())
+        self.rope = None
+
+    def forward(self, x: torch.Tensor):
+        # Rearrange weights on-the-fly to ensure they're on the correct device
+        q_mha = rearrange(
             self.q_proj_weight,
             "(num_h d_q) d -> num_h d_q d",
             num_h = self.num_heads
         )
-        self.k_mha = rearrange(
+        k_mha = rearrange(
             self.k_proj_weight,
             "(num_h d_k) d -> num_h d_k d",
             num_h = self.num_heads
         )
-        self.v_mha = rearrange(
+        v_mha = rearrange(
             self.v_proj_weight,
             "(num_h d_v) d -> num_h d_v d",
             num_h = self.num_heads
         )
-        self.mask = ~torch.triu(torch.ones(
-            self.max_seq_len, self.max_seq_len), diagonal = 1).bool()
-        self.rope = None
-
-    def forward(self, x: torch.Tensor):
+        
         qx = einsum(
-            self.q_mha, x,
+            q_mha, x,
             "num_h d_q d, ... seq_len d -> ... num_h seq_len d_q",
         )
         kx = einsum(
-            self.k_mha, x,
+            k_mha, x,
             "num_h d_k d, ... seq_len d -> ... num_h seq_len d_k",
         )
         vx = einsum(
-            self.v_mha, x,
+            v_mha, x,
             "num_h d_v d, ... seq_len d -> ... num_h seq_len d_v",
         )
         scaled_vx = scaled_dot_product_attention(qx, kx, vx, self.mask)
@@ -256,44 +267,51 @@ class multihead_self_attention_with_rope(nn.Module):
         self.max_seq_len = max_seq_len
         self.theta = theta
         self.d_k = self.d_v =  self.d_model // self.num_heads
-        self.q_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.k_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.v_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.o_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
-        self.q_mha = rearrange(
+        self.q_proj_weight = Linear(self.d_model, self.d_model).W
+        self.k_proj_weight = Linear(self.d_model, self.d_model).W
+        self.v_proj_weight = Linear(self.d_model, self.d_model).W
+        self.o_proj_weight = Linear(self.d_model, self.d_model).W
+        # self.q_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.k_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.v_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # self.o_proj_weight = nn.Parameter(torch.randn(self.d_model, self.d_model))
+        # Register mask as a buffer so it moves with the model to different devices
+        self.register_buffer('mask', ~torch.triu(torch.ones(
+            self.max_seq_len, self.max_seq_len), diagonal = 1).bool())
+        self.rope = RoPE(self.theta, self.d_k, self.max_seq_len)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor = None):
+        # Rearrange weights on-the-fly to ensure they're on the correct device
+        q_mha = rearrange(
             self.q_proj_weight,
             "(num_h d_q) d -> num_h d_q d",
             num_h = self.num_heads
         )
-        self.k_mha = rearrange(
+        k_mha = rearrange(
             self.k_proj_weight,
             "(num_h d_k) d -> num_h d_k d",
             num_h = self.num_heads
         )
-        self.v_mha = rearrange(
+        v_mha = rearrange(
             self.v_proj_weight,
             "(num_h d_v) d -> num_h d_v d",
             num_h = self.num_heads
         )
-        self.mask = ~torch.triu(torch.ones(
-            self.max_seq_len, self.max_seq_len), diagonal = 1).bool()
-        self.rope = RoPE(self.theta, self.d_k, self.max_seq_len)
-
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor = None):
+        
         qx = einsum(
-            self.q_mha, x,
+            q_mha, x,
             "num_h d_q d, ... seq_len d -> ... num_h seq_len d_q",
         )
         kx = einsum(
-            self.k_mha, x,
+            k_mha, x,
             "num_h d_k d, ... seq_len d -> ... num_h seq_len d_k",
         )
         vx = einsum(
-            self.v_mha, x,
+            v_mha, x,
             "num_h d_v d, ... seq_len d -> ... num_h seq_len d_v",
         )
         if token_positions is None:
-            token_positions = torch.arange(qx.shape[-2]).unsqueeze(dim=0)
+            token_positions = torch.arange(qx.shape[-2], device=qx.device).unsqueeze(dim=0)
         qx = self.rope(qx, token_positions)
         kx = self.rope(kx, token_positions)
         scaled_vx = scaled_dot_product_attention(
@@ -347,7 +365,8 @@ class transformer_lm(nn.Module):
         self.vocab_size = vocab_size
         self.context_length = context_length
         self.rope_theta = rope_theta
-        self.token_embeddings = nn.Parameter(torch.randn(self.vocab_size, self.d_model))
+        # self.token_embeddings = nn.Parameter(torch.randn(self.vocab_size, self.d_model))
+        self.token_embeddings = Linear(self.d_model, self.vocab_size).W
         self.layers = nn.ModuleList([
             transformer_block(
                 self.d_model, self.num_heads, self.d_ff, self.context_length, self.rope_theta
