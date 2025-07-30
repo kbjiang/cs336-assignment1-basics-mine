@@ -9,8 +9,8 @@ def get_batch(
     device:str = "cpu"
 ) -> tuple[torch.tensor, torch.tensor]:
     starting_indices = torch.randint(0, len(dataset) - context_length, (batch_size,))
-    x = torch.stack([torch.from_numpy(dataset[sid:sid+context_length]) for sid in starting_indices])
-    y = torch.stack([torch.from_numpy(dataset[sid+1:sid+context_length+1]) for sid in starting_indices])
+    x = torch.stack([torch.from_numpy(dataset[sid:sid+context_length].copy()) for sid in starting_indices])
+    y = torch.stack([torch.from_numpy(dataset[sid+1:sid+context_length+1].copy()) for sid in starting_indices])
     return x.to(device), y.to(device)
 
 class Dataset:

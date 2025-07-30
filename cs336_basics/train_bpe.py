@@ -10,7 +10,7 @@ import pstats
 from io import StringIO
 import argparse
 
-from utils import save_vocab_and_merge, find_chunk_boundaries
+from tokenizer import save_vocab_and_merge, find_chunk_boundaries
 
 import tracemalloc
 from tqdm import tqdm
@@ -266,9 +266,9 @@ if __name__ == "__main__":
                         help='List of special tokens (default: ["<|endoftext|>"])')
     parser.add_argument('--num_workers', type=int, default=40,
                         help='Number of processes for parallel processing (default: 40)')
-    parser.add_argument('--vocab_path', type=str, default="train_bpe_vocab.json",
+    parser.add_argument('--vocab_path', type=str, default="/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab.json",
                         help='Output path for vocabulary file (default: train_bpe_vocab.json)')
-    parser.add_argument('--merges_path', type=str, default="train_bpe_merges.txt",
+    parser.add_argument('--merges_path', type=str, default="/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges.txt",
                         help='Output path for merges file (default: train_bpe_merges.txt)')
     
     # Parse arguments
