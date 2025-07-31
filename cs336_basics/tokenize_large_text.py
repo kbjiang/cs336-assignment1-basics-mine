@@ -42,10 +42,14 @@ def find_chunk_boundaries(
         initial_position = chunk_boundaries[bi]
         file.seek(initial_position)  # Start at boundary guess
         while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+            try:
+                mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
+            except UnicodeDecodeError:  # byte not valid, go back one position
+                file.seek(initial_position - 1)
+                continue
 
             # If EOF, this boundary should be at the end of the file
-            if mini_chunk == b"":
+            if mini_chunk == "":
                 chunk_boundaries[bi] = file_size
                 break
 
@@ -71,7 +75,7 @@ def encode_chunk_with_progress(args):
     
     # Process the chunk in smaller pieces to show real progress
     chunk_length = len(chunk)
-    sub_chunk_size = max(1000, chunk_length // 50)  # Process in ~2% increments
+    sub_chunk_size = max(1e4, chunk_length // 100)  # Process in ~2% increments
     
     all_tokens = []
     
@@ -128,10 +132,14 @@ def monitor_progress(progress_dict, num_workers, total_chunks):
         bar.close()
 
 if __name__ == "__main__":
-    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
-    vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_ts.json"
-    merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_ts.txt"
-    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-train.npy"
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
+    # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-train.npy"
+    # vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_ts.json"
+    # merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_ts.txt"
+    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
+    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.npy"
+    vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_owt.json"
+    merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_owt.txt"
 
     special_tokens = ["<|endoftext|>"]
     num_workers = 40 

@@ -4,7 +4,7 @@
 # Make sure to set your wandb API key first: wandb login
 
 # Training with wandb (default settings)
-python cs336_basics/train_with_wandb.py \
+python cs336_basics/train.py \
     --data_path data/TinyStoriesV2-train.npy \
     --eval_data_path data/TinyStoriesV2-valid.npy \
     --vocab_path data/train_bpe_vocab_ts.json \
@@ -15,7 +15,8 @@ python cs336_basics/train_with_wandb.py \
     --device cuda \
     --wandb_project "cs336-transformer-training" \
     --wandb_run_name "test-run-$(date +%Y%m%d-%H%M%S)" \
-    --log_interval 100
+    --log_interval 100 \
+    --checkpoint_path /home/azureuser/02-fun/cs336-assignment1-basics/data/checkpoint-owt.pt
 
 # Training without wandb
 # python cs336_basics/train_with_wandb.py \
