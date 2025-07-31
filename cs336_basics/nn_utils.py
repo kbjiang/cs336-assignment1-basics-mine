@@ -2,8 +2,9 @@ import torch
 from typing import Iterable
 from einops import rearrange
 
-def softmax(x:torch.Tensor, dim:int):
+def softmax(x:torch.Tensor, dim:int, temperature: float = 1.0):
     x = x - torch.amax(x, dim=dim, keepdim=True)
+    x /= temperature
     x_exp = torch.exp(x)
     return x_exp/torch.sum(x_exp, axis=dim, keepdim=True)
 
