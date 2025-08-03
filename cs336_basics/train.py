@@ -30,12 +30,20 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
     parser.add_argument("--num_steps", type=int, default=1000, help="Number of training steps")
     
+    # Learning rate scheduling
+    parser.add_argument("--lr_scheduling", action="store_true", help="Enable learning rate scheduling")
+    parser.add_argument("--lr_max", type=float, default=1e-3, help="Maximum learning rate for scheduling")
+    parser.add_argument("--lr_min", type=float, default=1e-5, help="Minimum learning rate for scheduling")
+    parser.add_argument("--warmup_iters", type=int, default=100, help="Number of warmup iterations")
+    parser.add_argument("--cosine_cycle_iters", type=int, default=1000, help="Number of iterations for cosine cycle")
+    
     # Data and model paths
     parser.add_argument("--data_path", type=str, required=True, help="Path to training data (.npy file)")
     parser.add_argument("--eval_data_path", type=str, required=True, help="Path to evaluation data (.npy file)")
     parser.add_argument("--vocab_path", type=str, required=True, help="Path to vocabulary file")
     parser.add_argument("--merges_path", type=str, required=True, help="Path to merges file")
     parser.add_argument("--checkpoint_path", type=str, default="/home/azureuser/02-fun/cs336-assignment1-basics/data/checkpoint.pt", help="Path to save checkpoint")
+    parser.add_argument("--log_path", type=str, default="log.jsonl", help="Path to save experiment logs")
     
     # Device
     parser.add_argument("--device", type=str, default="cpu", help="Device to use (cpu, cuda, cuda:0, etc.)")
@@ -74,6 +82,11 @@ if __name__ == "__main__":
     optimizer = AdamW(
         model.parameters(),
         lr=args.lr,
+        lr_scheduling=args.lr_scheduling,
+        lr_max=args.lr_max,
+        lr_min=args.lr_min,
+        warmup_iters=args.warmup_iters,
+        cosine_cycle_iters=args.cosine_cycle_iters,
         weight_decay=args.weight_decay,
     )
 
@@ -141,4 +154,67 @@ if __name__ == "__main__":
         wandb.log_artifact(artifact)
         
         wandb.finish()
-        print(f"Training completed. Checkpoint saved to {args.checkpoint_path}")
+
+    # log experiment params/result to a local file.
+    # params should include all `model parameters` and `training parameters`, date/time of completion, the final losses, grad_norm and learning_rate
+    # and the id of this entry should be the same as args.wandb_run_name
+
+    import json
+    from datetime import datetime
+    
+    # Get final metrics
+    x_eval, y_eval = dataset_eval.get_batch(args.batch_size * 4, args.context_length, args.device)
+    with torch.no_grad():
+        y_hat_eval = model(x_eval)
+        final_loss_eval = cross_entropy_with_batch(y_hat_eval, y_eval).item()
+    final_loss_train = loss.item()
+    final_grad_norm = grad_norm.item()
+    final_lr = optimizer.param_groups[0]['lr']
+    
+    # Prepare experiment log entry
+    experiment_log = {
+        "id": args.wandb_run_name if args.wandb_run_name else f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        "completion_time": datetime.now().isoformat(),
+        "wandb_url": wandb.run.url if not args.no_wandb and wandb.run else None,
+        "model_parameters": {
+            "d_model": args.d_model,
+            "d_ff": args.d_ff,
+            "num_heads": args.num_heads,
+            "num_layers": args.num_layers,
+            "context_length": args.context_length,
+            "rope_theta": args.rope_theta,
+            "vocab_size": len(vocab)
+        },
+        "training_parameters": {
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "lr_scheduling": args.lr_scheduling,
+            "lr_max": args.lr_max if args.lr_scheduling else None,
+            "lr_min": args.lr_min if args.lr_scheduling else None,
+            "warmup_iters": args.warmup_iters if args.lr_scheduling else None,
+            "cosine_cycle_iters": args.cosine_cycle_iters if args.lr_scheduling else None,
+            "weight_decay": args.weight_decay,
+            "num_steps": args.num_steps,
+            "log_interval": args.log_interval
+        },
+        "final_metrics": {
+            "final_train_loss": final_loss_train,
+            "final_eval_loss": final_loss_eval,
+            "final_grad_norm": final_grad_norm,
+            "final_learning_rate": final_lr
+        },
+        "data_paths": {
+            "data_path": args.data_path,
+            "eval_data_path": args.eval_data_path,
+            "vocab_path": args.vocab_path,
+            "merges_path": args.merges_path,
+            "checkpoint_path": args.checkpoint_path
+        }
+    }
+    
+    # Save to local experiments log file
+    with open(args.log_path, "a") as f:
+        f.write(json.dumps(experiment_log) + "\n")
+    
+    print(f"Training completed. Checkpoint saved to {args.checkpoint_path}")
+    print(f"Experiment logged to {args.log_path}")

@@ -136,8 +136,8 @@ if __name__ == "__main__":
     # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-train.npy"
     # vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_ts.json"
     # merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_ts.txt"
-    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
-    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.npy"
+    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.txt"
+    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.npy"
     vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_owt.json"
     merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_owt.txt"
 

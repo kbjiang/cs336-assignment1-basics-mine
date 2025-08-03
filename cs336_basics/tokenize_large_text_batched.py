@@ -45,7 +45,9 @@ def find_chunk_boundaries(
             try:
                 mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
             except UnicodeDecodeError:  # byte not valid, go back one position
-                file.seek(initial_position - 1)
+                initial_position -= 1
+                mini_chunk_size += 1
+                file.seek(initial_position)
                 continue
 
             # If EOF, this boundary should be at the end of the file
@@ -71,8 +73,15 @@ def encode_chunk_with_progress(args):
     
     try:
         with open(file_path, "r") as f:
-            f.seek(start)
-            chunk = f.read(end - start)
+            while True:
+                try:
+                    f.seek(start)
+                    chunk = f.read(end - start)
+                    break
+                except UnicodeDecodeError:
+                    print("UnicodeDecoderError encountered, moving starting position by one.")
+                    start -= 1
+                    continue
         
         # Process the chunk in smaller pieces to show real progress
         chunk_length = len(chunk)
@@ -204,7 +213,7 @@ def split_file_into_batches(input_path, num_batches, special_token, temp_dir):
                     batch_content = f.read(end - start)
                     break
                 except UnicodeDecodeError:
-                    print("hey hey")
+                    print("UnicodeDecoderError encountered, moving starting position by one.")
                     start -= 1
                     continue
             
@@ -358,17 +367,18 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
     
     # Configuration
-    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
     # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-train.npy"
     # vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_ts.json"
     # merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_ts.txt"
-    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
-    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train_batched.npy"
+    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train.txt"
+    # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_train_batched.npy"
+    save_dir = "/home/azureuser/02-fun/cs336-assignment1-basics/data/"
     vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_owt.json"
     merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_owt.txt"
 
     special_tokens = ["<|endoftext|>"]
-    num_workers = 40  # Workers per batch
+    num_workers = 48  # Workers per batch
     num_batches = 80 # num of batches of files
     timeout_minutes = 40  # Timeout per batch in minutes
     
@@ -398,6 +408,8 @@ if __name__ == "__main__":
         all_stuck_chunks = []
         
         for i, (batch_file, info) in enumerate(zip(batch_files, batch_info)):
+            if i not in [13]:
+                continue
             print(f"\n{'='*50}")
             print(f"Starting batch {i+1}/{num_batches}")
             print(f"{'='*50}")
@@ -419,6 +431,10 @@ if __name__ == "__main__":
             # Force garbage collection between batches
             print(f"  Running garbage collection...")
             gc.collect()
+
+            save_path = os.path.join(save_dir, f"owt_train_batch_{i+1:03d}.npy")
+            np.save(save_path, np.array(batch_tokens, dtype=np.int32))
+            print(f"  Batch {i+1} result saved to {save_path}.")
             print(f"  Batch {i+1} fully completed, moving to next batch")
         
         total_time = time.time() - total_start
@@ -433,9 +449,9 @@ if __name__ == "__main__":
                 print(f"  - {log_file}")
             print("Review these files to identify problematic chunks for manual inspection.")
         
-        # Save the final result
-        print(f"Saving tokens to {save_path}...")
-        np.save(save_path, np.array(all_tokens, dtype=np.int32))
+        # # Save the final result
+        # print(f"Saving tokens to {save_path}...")
+        # np.save(save_path, np.array(all_tokens, dtype=np.int32))
         print("Tokenization complete!")
         
     finally:
