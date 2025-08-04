@@ -34,6 +34,7 @@ class AdamW(torch.optim.Optimizer):
                 "betas": betas, "eps": eps, "weight_decay": weight_decay
             }
         else:
+            self.lr_scheduling = False
             defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
         super().__init__(params, defaults)
 
