@@ -7,6 +7,9 @@ from model import *
 from tokenizer import *
 from serialization import load_checkpoint
 
+"""
+# original implementation slows down dramatically when `temperature` is high.
+# This is because more uniform distribution requires many tokens to reach `top_p`.
 def get_next_id(model, current_prompt, temperature=1.0, top_p=None):
     if len(current_prompt.size()) == 1:
         current_prompt = current_prompt.unsqueeze(0)
@@ -27,6 +30,34 @@ def get_next_id(model, current_prompt, temperature=1.0, top_p=None):
 
         next_id = probs.multinomial(num_samples=1, replacement=True)
         return indices[next_id]
+"""
+
+def get_next_id(model, current_prompt, temperature=1.0, top_p=None):
+    # sliding window for context
+    current_prompt = current_prompt[-args.context_length:].unsqueeze(0)
+    with torch.no_grad():
+        logits = model(current_prompt)[0]
+        probs = softmax(logits[-1, :], dim=-1, temperature=temperature)
+        
+        if top_p:
+            # More efficient top_p implementation
+            probs_sorted, indices_sorted = torch.sort(probs, descending=True)
+            probs_cumsum = torch.cumsum(probs_sorted, dim=-1)
+            
+            # Find cutoff more efficiently
+            cutoff_idx = torch.searchsorted(probs_cumsum, top_p, right=False) + 1
+            cutoff_idx = min(cutoff_idx, len(probs_sorted))
+            
+            # Zero out probabilities beyond cutoff
+            probs_filtered = torch.zeros_like(probs)
+            probs_filtered[indices_sorted[:cutoff_idx]] = probs_sorted[:cutoff_idx]
+            probs_filtered = probs_filtered / probs_filtered.sum()
+            
+            next_id = probs_filtered.multinomial(num_samples=1, replacement=True)
+            return next_id
+        else:
+            next_id = probs.multinomial(num_samples=1, replacement=True)
+            return next_id
 
 def decoding(model, current_prompt: Int[torch.Tensor, "length"], max_new_tokens: int, eos_id: int, temperature: float = 1.0, top_p: float | None = None):
     count = 0

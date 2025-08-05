@@ -5,23 +5,25 @@
 
 # Configuration flags - set to empty string to disable, or uncomment/comment as needed
 USE_WANDB=""              # Set to "--no_wandb" to disable wandb
+WITHOUT_REPLACEMENT="--without_replacement"              # Set to "--without_replacement" to disable wandb
 BATCH_SIZE=128
 LR_SCHEDULING="--lr_scheduling"  # Set to "" to disable lr scheduling
 LR=1e-3
 LR_MAX=1e-3
 LR_MIN=1e-4
-WANDB_PROJECT="cs336-assign1-ts" 
-WANDB_RUN_NAME="test-run-bs-$BATCH_SIZE"
+WANDB_PROJECT="cs336-assign1-owt" 
+WANDB_RUN_NAME="test-run-bs-$BATCH_SIZE-worpl"
 # WANDB_RUN_NAME="--wandb_run_name test-run-$(date +%Y%m%d-%H%M%S)" 
 
 # Training with wandb (default settings)
 python cs336_basics/train.py \
-    --data_path data/TinyStoriesV2-train.npy \
-    --eval_data_path data/TinyStoriesV2-valid.npy \
-    --vocab_path data/train_bpe_vocab_ts.json \
-    --merges_path data/train_bpe_merges_ts.txt \
+    --data_path data/owt_train.npy \
+    --eval_data_path data/owt_valid.npy \
+    --vocab_path data/train_bpe_vocab_owt.json \
+    --merges_path data/train_bpe_merges_owt.txt \
+    $WITHOUT_REPLACEMENT \
     --log_path data/log-ts.jsonl \
-    --checkpoint_path /home/azureuser/02-fun/cs336-assignment1-basics/data/checkpoint_ts.pt \
+    --checkpoint_path data/checkpoint_owt_worpl.pt \
     --num_steps 10000 \
     --batch_size $BATCH_SIZE \
     $LR_SCHEDULING \

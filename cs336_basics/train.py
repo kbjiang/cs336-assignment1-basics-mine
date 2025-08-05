@@ -44,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--merges_path", type=str, required=True, help="Path to merges file")
     parser.add_argument("--checkpoint_path", type=str, default="/home/azureuser/02-fun/cs336-assignment1-basics/data/checkpoint.pt", help="Path to save checkpoint")
     parser.add_argument("--log_path", type=str, default="log.jsonl", help="Path to save experiment logs")
+    parser.add_argument("--without_replacement", action="store_true", help="Disable replacement in batch generation")
     
     # Device
     parser.add_argument("--device", type=str, default="cpu", help="Device to use (cpu, cuda, cuda:0, etc.)")
@@ -102,10 +103,15 @@ if __name__ == "__main__":
         # Watch the model for gradients and parameters
         wandb.watch(model, log="all", log_freq=args.log_interval)
 
-    dataset = Dataset(args.data_path)
-    dataset_eval = Dataset(args.eval_data_path)
+    dataset = Dataset(args.data_path, args.without_replacement)
+    dataset_eval = Dataset(args.eval_data_path, args.without_replacement)
     
     print(f"Starting training for {args.num_steps} steps...")
+    
+    # Start timing
+    import time
+    training_start_time = time.time()
+    
     for i in tqdm(range(args.num_steps), total=args.num_steps):
         batch = dataset.get_batch(args.batch_size, args.context_length, args.device)
         optimizer.zero_grad()
@@ -138,13 +144,24 @@ if __name__ == "__main__":
                     "learning_rate": optimizer.param_groups[0]['lr']
                 }, step=i+1)
 
-    print("Training finished")
+    # Calculate training time
+    training_end_time = time.time()
+    total_training_time = training_end_time - training_start_time
+    
+    print(f"Training finished in {total_training_time:.2f} seconds ({total_training_time/60:.2f} minutes)")
 
     # Save checkpoint
     save_checkpoint(model, optimizer, i, args.checkpoint_path)
     
     # Log final checkpoint to wandb
     if not args.no_wandb:
+        # Log final training time
+        wandb.log({
+            "training_time_seconds": total_training_time,
+            "training_time_minutes": total_training_time / 60,
+            "steps_per_second": args.num_steps / total_training_time
+        })
+        
         artifact = wandb.Artifact(
             name=f"model-checkpoint-{wandb.run.id}",
             type="model",
@@ -201,7 +218,10 @@ if __name__ == "__main__":
             "final_train_loss": final_loss_train,
             "final_eval_loss": final_loss_eval,
             "final_grad_norm": final_grad_norm,
-            "final_learning_rate": final_lr
+            "final_learning_rate": final_lr,
+            "training_time_seconds": total_training_time,
+            "training_time_minutes": total_training_time / 60,
+            "steps_per_second": args.num_steps / total_training_time
         },
         "data_paths": {
             "data_path": args.data_path,
