@@ -345,7 +345,6 @@ class transformer_block(nn.Module):
         z = y + self.ffn(self.rmsnorm2(y))
         return z
 
-
 class transformer_lm(nn.Module):
     def __init__(
         self,

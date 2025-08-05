@@ -38,7 +38,8 @@ class AdamW(torch.optim.Optimizer):
             defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
         super().__init__(params, defaults)
 
-    def step(self):
+    # the granularity of making steps is determined by `gradient_accumulation_steps`
+    def step(self, gradient_accumulation_steps=1):
         for group in self.param_groups:
             lr = group['lr']
             beta1, beta2 = group['betas']
@@ -58,7 +59,8 @@ class AdamW(torch.optim.Optimizer):
                     state["v"] = torch.zeros_like(grad)
                 
                 # +1 to coz we count from 1.
-                t += 1
+                # t = t + 1
+                t = t + gradient_accumulation_steps
                 if self.lr_scheduling:
                     lr = learning_rate_schedule(t, self.lr_max, self.lr_min, self.warmup_iters, self.cosine_cycle_iters)
                     group['lr'] = lr

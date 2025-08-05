@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay")
     parser.add_argument("--num_steps", type=int, default=1000, help="Number of training steps")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of training steps before a gradient step")
     
     # Learning rate scheduling
     parser.add_argument("--lr_scheduling", action="store_true", help="Enable learning rate scheduling")
@@ -114,17 +115,31 @@ if __name__ == "__main__":
     
     for i in tqdm(range(args.num_steps), total=args.num_steps):
         batch = dataset.get_batch(args.batch_size, args.context_length, args.device)
-        optimizer.zero_grad()
         x, y = batch
         y_hat = model(x)
-        loss = cross_entropy_with_batch(y_hat, y)
-        loss.backward()
+
+        # `accumulated_loss += step_loss` and `accumulated_loss.backward()` leads to OOM error;
+        # because it keeps all `step_loss`` in the computation graph.
+        # instead, should do `backward()` to free the computation graph every step.
+
+        if i % args.gradient_accumulation_steps == 0:
+            optimizer.zero_grad()
         
-        # Compute gradient norm for monitoring (`inf` so it doesn't clip)
-        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
-        # gradient_clipping(model.parameters(), max_l2_norm = 1e-2)
+        # Compute loss for this step
+        step_loss = cross_entropy_with_batch(y_hat, y)
         
-        optimizer.step()
+        # Normalize loss by accumulation steps and backward immediately
+        normalized_loss = step_loss / args.gradient_accumulation_steps
+        normalized_loss.backward()  # This frees the computation graph immediately
+        
+        # Apply gradients when accumulation is complete
+        if (i + 1) % args.gradient_accumulation_steps == 0 or (i + 1) == args.num_steps:
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
+            optimizer.step(args.gradient_accumulation_steps)
+            current_grad_norm = grad_norm.item()
+        else:
+            # If not applying gradients, use the last computed grad norm for logging
+            current_grad_norm = grad_norm if 'grad_norm' in locals() else 0.0
         
         # Log metrics
         if (i + 1) % args.log_interval == 0:
@@ -132,7 +147,9 @@ if __name__ == "__main__":
             with torch.no_grad():
                 y_hat_eval = model(x_eval)
                 loss_eval = cross_entropy_with_batch(y_hat_eval, y_eval).item()
-            loss_train = loss.item()
+
+            # Log the current step's loss, not the accumulated loss
+            loss_train = step_loss.item()
             print(f"Step {i+1}: Loss_eval = {loss_eval:.4f}, Loss_train = {loss_train:.4f}, Grad Norm = {grad_norm:.4f}")
             
             if not args.no_wandb:
@@ -140,7 +157,7 @@ if __name__ == "__main__":
                     "step": i + 1,
                     "train_loss": loss_train,
                     "eval_loss": loss_eval,
-                    "grad_norm": grad_norm,
+                    "grad_norm": current_grad_norm,
                     "learning_rate": optimizer.param_groups[0]['lr']
                 }, step=i+1)
 
@@ -179,14 +196,6 @@ if __name__ == "__main__":
     import json
     from datetime import datetime
     
-    # Get final metrics
-    x_eval, y_eval = dataset_eval.get_batch(args.batch_size * 4, args.context_length, args.device)
-    with torch.no_grad():
-        y_hat_eval = model(x_eval)
-        final_loss_eval = cross_entropy_with_batch(y_hat_eval, y_eval).item()
-    final_loss_train = loss.item()
-    final_grad_norm = grad_norm.item()
-    final_lr = optimizer.param_groups[0]['lr']
     
     # Prepare experiment log entry
     experiment_log = {
@@ -215,10 +224,10 @@ if __name__ == "__main__":
             "log_interval": args.log_interval
         },
         "final_metrics": {
-            "final_train_loss": final_loss_train,
-            "final_eval_loss": final_loss_eval,
-            "final_grad_norm": final_grad_norm,
-            "final_learning_rate": final_lr,
+            "final_train_loss": loss_train,
+            "final_eval_loss": loss_eval,
+            "final_grad_norm": current_grad_norm,
+            "final_learning_rate": optimizer.param_groups[0]['lr'],
             "training_time_seconds": total_training_time,
             "training_time_minutes": total_training_time / 60,
             "steps_per_second": args.num_steps / total_training_time
