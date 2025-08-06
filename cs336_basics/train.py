@@ -150,7 +150,11 @@ if __name__ == "__main__":
 
             # Log the current step's loss, not the accumulated loss
             loss_train = step_loss.item()
-            print(f"Step {i+1}: Loss_eval = {loss_eval:.4f}, Loss_train = {loss_train:.4f}, Grad Norm = {grad_norm:.4f}")
+            lr_ = optimizer.param_groups[0]['lr']
+            print(
+                f"Step {i+1}: Loss eval = {loss_eval:.4f}, Loss train = {loss_train:.4f}, "
+                f"Learning rate = {lr_:.4f}, Grad norm = {grad_norm:.4f}"
+            )
             
             if not args.no_wandb:
                 wandb.log({
@@ -158,7 +162,7 @@ if __name__ == "__main__":
                     "train_loss": loss_train,
                     "eval_loss": loss_eval,
                     "grad_norm": current_grad_norm,
-                    "learning_rate": optimizer.param_groups[0]['lr']
+                    "learning_rate": lr_,
                 }, step=i+1)
 
     # Calculate training time
