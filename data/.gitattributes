@@ -1,2 +1,0 @@
-train_bpe_vocab_owt.json filter=lfs diff=lfs merge=lfs -text
-train_bpe_merges_owt.txt filter=lfs diff=lfs merge=lfs -text
