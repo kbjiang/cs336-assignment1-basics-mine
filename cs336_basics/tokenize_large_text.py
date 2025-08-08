@@ -75,7 +75,7 @@ def encode_chunk_with_progress(args):
     
     # Process the chunk in smaller pieces to show real progress
     chunk_length = len(chunk)
-    sub_chunk_size = max(1e4, chunk_length // 100)  # Process in ~2% increments
+    sub_chunk_size = max(int(1e4), chunk_length // 100)  # Process in ~2% increments
     
     all_tokens = []
     
@@ -132,17 +132,17 @@ def monitor_progress(progress_dict, num_workers, total_chunks):
         bar.close()
 
 if __name__ == "__main__":
-    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-GPT4-train.txt"
-    # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/TinyStoriesV2-train.npy"
-    # vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_ts.json"
-    # merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_ts.txt"
-    input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.txt"
-    save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.npy"
-    vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_owt.json"
-    merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_owt.txt"
+    input_path = "data/TinyStoriesV2-GPT4-valid.txt"
+    save_path = "data/ts_valid.npy"
+    vocab_path = "data/bpe_vocab_ts.json"
+    merges_path = "data/bpe_merges_ts.txt"
+    # input_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.txt"
+    # save_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/owt_valid.npy"
+    # vocab_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_vocab_owt.json"
+    # merges_path = "/home/azureuser/02-fun/cs336-assignment1-basics/data/train_bpe_merges_owt.txt"
 
     special_tokens = ["<|endoftext|>"]
-    num_workers = 40 
+    num_workers = 12 
 
     tokenizer = Tokenizer.from_files(
         vocab_filepath=vocab_path,
