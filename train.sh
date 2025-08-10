@@ -6,14 +6,14 @@
 # Configuration flags - set to empty string to disable, or uncomment/comment as needed
 D_MODEL=512
 D_FF=1344
-NUM_LAYERS=8
-NUM_HEADS=8
-BATCH_SIZE=64
-CONTEXT_LENGTH=512
-GRADIENT_ACCUMULATION_STEPS=2
+NUM_LAYERS=4
+NUM_HEADS=16
+BATCH_SIZE=128
+CONTEXT_LENGTH=256
+GRADIENT_ACCUMULATION_STEPS=1
 WITHOUT_REPLACEMENT=""            # Set to "--without_replacement" to disable replacement in batch generation
-LR_SCHEDULING="" 
-# LR_SCHEDULING="--lr_scheduling"  # Set to "" to disable lr scheduling
+# LR_SCHEDULING="" 
+LR_SCHEDULING="--lr_scheduling"  # Set to "" to disable lr scheduling
 LR=1e-3
 LR_MAX=1e-3
 LR_MIN=1e-4
@@ -21,7 +21,7 @@ LR_MIN=1e-4
 USE_WANDB=""              # Set to "--no_wandb" to disable wandb
 WANDB_PROJECT="cs336-assign1-ts" 
 
-SUFFIX="d512-dff1344-l8-h8-cl512-bs128"
+SUFFIX="d512-dff1344-l4-h16-cl256-bs128"
 WANDB_RUN_NAME="run-$SUFFIX"
 # WANDB_RUN_NAME="--wandb_run_name test-run-$(date +%Y%m%d-%H%M%S)" 
 

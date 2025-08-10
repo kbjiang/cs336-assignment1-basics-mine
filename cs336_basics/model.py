@@ -90,6 +90,30 @@ class RMSNorm(nn.Module):
         )
         return result.to(in_dtype)
 
+class SiLU(nn.Module):
+    def __init__(self, d_model: int, d_ff: int):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.w1_weight = Linear(self.d_model, self.d_ff).W
+        self.w2_weight = Linear(self.d_ff, self.d_model).W
+
+    @staticmethod
+    def silu(x: torch.Tensor):
+        return x * torch.sigmoid(x)
+
+    def forward(self, x: torch.Tensor):
+        w1x = einsum(
+            self.w1_weight, x, 
+            "d_ff d_model, ... d_model -> ... d_ff"
+        )
+        sw1x = SiLU.silu(w1x)
+        result = einsum(
+            self.w2_weight, sw1x,
+            "d_model d_ff, ... d_ff -> ... d_model"
+        )
+        return result
+
 class SwiGLU(nn.Module):
     def __init__(self, d_model: int, d_ff: int):
         super().__init__()
@@ -216,7 +240,7 @@ class multihead_self_attention(nn.Module):
             self.max_seq_len, self.max_seq_len), diagonal = 1).bool())
         self.rope = None
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, token_positions=None):
         # Rearrange weights on-the-fly to ensure they're on the correct device
         q_mha = rearrange(
             self.q_proj_weight,
@@ -246,7 +270,10 @@ class multihead_self_attention(nn.Module):
             v_mha, x,
             "num_h d_v d, ... seq_len d -> ... num_h seq_len d_v",
         )
-        scaled_vx = scaled_dot_product_attention(qx, kx, vx, self.mask)
+        if token_positions is None:
+            token_positions = torch.arange(qx.shape[-2], device=qx.device).unsqueeze(dim=0)
+        scaled_vx = scaled_dot_product_attention(
+            qx, kx, vx, self.mask[:token_positions.shape[-1], :token_positions.shape[-1]])
         scaled_vx = rearrange(
             scaled_vx,
             "batch_size h seq_len d -> batch_size seq_len (h d)"
@@ -337,8 +364,11 @@ class transformer_block(nn.Module):
         self.rmsnorm2 = RMSNorm(self.d_model)
         self.attn = multihead_self_attention_with_rope(
             d_model, num_heads, max_seq_len, theta
+        # self.attn = multihead_self_attention(
+        #     d_model, num_heads, max_seq_len,
         )
         self.ffn = SwiGLU(self.d_model, self.d_ff)
+        # self.ffn = SiLU(self.d_model, self.d_ff)
 
     def forward(self, x:torch.Tensor):
         y = x + self.attn(self.rmsnorm1(x), token_positions=None)
